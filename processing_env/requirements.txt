@@ -1,6 +1,5 @@
 # ------------------------------------------------------
 # Shapely: Does planar geometric processing (uses GEOS).
-# Pygeos: Newer sibling to shapely with focus on performance. Will be integrated in shapely 2.0.
 # Fiona: Reads and writes everything (uses OGR).
 # Pyproj: Handles projections (uses PROJ).
 # Rtree: Spatial indexing (plays well with GeoPandas).
@@ -39,7 +38,6 @@ openpyxl
 OWSLib
 pyarrow
 psycopg2-binary
-pygeos
 pyproj
 pysal
 rasterio
@@ -51,6 +49,4 @@ xarray-spatial
 xarray[io]
 xlsxwriter
 xlrd
-numpy>=1.21.0
 duckdb
---no-binary=shapely,pygeos

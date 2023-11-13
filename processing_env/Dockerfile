@@ -9,7 +9,7 @@
 
 ARG GDAL_VERSION=3.7.3
 
-FROM ghcr.io/osgeo/gdal:ubuntu-small-${GDAL_VERSION} as base
+FROM ghcr.io/osgeo/gdal:ubuntu-full-${GDAL_VERSION} as base
 
 # Set the working directory in the container
 WORKDIR /app
@@ -30,11 +30,11 @@ RUN apt update && \
     apt-get install -y --no-install-recommends \
     build-essential \
     python3-dev \
-    python3-pip \
-    libgeos-dev
+    python3-pip
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt
+# If there is a need to reduce image size at cost of building efficiency, add --no-cache-dir
+RUN pip install --upgrade pip \
+    && pip install -r requirements.txt
 
 #-----------------
 # Misc setup
@@ -58,6 +58,7 @@ FROM base as dev
 
 # Install dev python packages
 COPY ./dev/requirements.dev.txt .
-RUN pip install --no-cache-dir -r requirements.dev.txt
+# If there is a need to reduce image size at cost of building efficiency, add --no-cache-dir
+RUN pip install -r requirements.dev.txt
 
 CMD ["jupyter", "lab" ,"--ip=0.0.0.0", "--port=8888", "--allow-root", "--no-browser", "--autoreload"]
