@@ -36,7 +36,7 @@ jobs:
         with:
           context: ./processing_env
           push: true
-          tags: ghcr.io/${{ github.repository }}/geo-processing-env:${{ github.sha }}
+          tags: ghcr.io/${{ github.repository }}/processing_env-dev:${{ github.sha }}
           platforms: linux/amd64,linux/arm64
           target: dev
           cache-from: type=local,src=/tmp/.buildx-cache
