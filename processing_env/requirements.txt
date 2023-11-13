@@ -25,6 +25,7 @@
 # Psycopg2: Allows to interact with Postgres databases.
 # duckdb: Lightweight SQL based analysis tool that allows to interface directly with files.
 
+numcodecs
 fastparquet
 Fiona
 folium
