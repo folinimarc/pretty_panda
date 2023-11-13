@@ -1,7 +1,7 @@
 {
   "build": {
-    "context": "../processingEnv",
-    "dockerfile": "../processingEnv/Dockerfile",
+    "context": "../processing_env",
+    "dockerfile": "../processing_env/Dockerfile",
     "target": "dev"
   },
   "customizations": {

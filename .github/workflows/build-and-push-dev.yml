@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - 'processingEnv/**'
+      - 'processing_env/**'
 
 jobs:
   build-and-push:
@@ -26,7 +26,7 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v2
         with:
-          context: ./processingEnv
+          context: ./processing_env
           push: true
           tags: ghcr.io/${{ github.repository }}/geo-processing-env:${{ github.sha }}
           platforms: linux/amd64,linux/arm64
