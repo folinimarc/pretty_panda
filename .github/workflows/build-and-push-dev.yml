@@ -2,6 +2,7 @@
 name: Build and Push Dev
 
 on:
+  workflow_dispatch:
   push:
     paths:
       - 'processingEnv/**'
