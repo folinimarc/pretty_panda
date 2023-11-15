@@ -2,41 +2,43 @@
 from google.cloud import storage
 
 
-def read_blob(bucket_name, blob_name):
+def read_blob(location, mode="r"):
     """
     Read a blob from GCS using file-like IO.
     Requires env variable GOOGLE_APPLICATION_CREDENTIALS to point to a service account
     credentials json with appropriate permissions.
     """
+    bucket_name, blob_name = location.split("/", 1)
     storage_client = storage.Client()
     bucket = storage_client.bucket(bucket_name)
     blob = bucket.blob(blob_name)
     if not blob.exists():
         return None
-    with blob.open("r") as f:
+    with blob.open(mode) as f:
         return f.read()
 
 
-def delete_blobs(bucket_name, prefix):
+def list_blobs(location):
     """
-    Deletes blobs from the bucket with the given prefix.
+    Lists blobs in the bucket with the given prefix.
     Requires env variable GOOGLE_APPLICATION_CREDENTIALS to point to a service account
     credentials json with appropriate permissions.
     """
+    bucket_name, prefix = location.split("/", 1)
     storage_client = storage.Client()
     bucket = storage_client.bucket(bucket_name)
     blobs = bucket.list_blobs(prefix=prefix)
-    for blob in blobs:
-        blob.delete()
+    return [f"{bucket_name}/{blob.name}" for blob in blobs]
 
 
-def delete_blob(bucket_name, blob_name):
+def delete_blob(location):
     """
     Deletes a blob from the bucket.
     Requires env variable GOOGLE_APPLICATION_CREDENTIALS to point to a service account
     credentials json with appropriate permissions.
     From https://cloud.google.com/storage/docs/samples/storage-delete-file
     """
+    bucket_name, blob_name = location.split("/", 1)
     storage_client = storage.Client()
     bucket = storage_client.bucket(bucket_name)
     blob = bucket.blob(blob_name)
@@ -44,15 +46,14 @@ def delete_blob(bucket_name, blob_name):
         blob.delete()
 
 
-def write_blob(data, mode, bucket_name, blob_name):
+def write_blob(location, data, mode="w"):
     """
     Write a blob from GCS using file-like IO.
     From https://cloud.google.com/appengine/docs/legacy/standard/python/googlecloudstorageclient/read-write-to-cloud-storage
     """
+    bucket_name, blob_name = location.split("/", 1)
     storage_client = storage.Client()
     bucket = storage_client.bucket(bucket_name)
     blob = bucket.blob(blob_name)
     with blob.open(mode) as f:
         f.write(data)
-    # with blob.open("r") as f:
-    #     print(f.read())
