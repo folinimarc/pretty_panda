@@ -40,6 +40,8 @@
   "postCreateCommand": "pre-commit install",
   "runArgs": [
     "--env-file",
+    "./.env",
+    "--env-file",
     "./.env.secret"
   ]
 }
