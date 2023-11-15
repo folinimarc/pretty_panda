@@ -45,6 +45,7 @@ jobs:
         with:
           context: ./processing_env
           push: true
+          provenance: false # Avoid unknown/unknown platform
           tags: ghcr.io/${{ github.repository }}/processing_env-dev:${{ github.sha }}
           platforms: linux/amd64 #,linux/arm64
           target: dev
