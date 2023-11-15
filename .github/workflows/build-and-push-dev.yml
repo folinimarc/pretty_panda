@@ -14,6 +14,10 @@ jobs:
       contents: read
       packages: write
 
+    env:
+      # Is set below, because we cannot use expressions in env. Declaring here for clarity
+      CURRENT_DATE:
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -39,6 +43,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-buildx-
 
+      - name: Get the current date and time
+        id: set_current_date
+        run: echo "::set-env name=CURRENT_DATE::$(date +'%Y-%m-%dT%H:%M:%S')"
+
       # TODO: Enable multi platform build, once python package numcodecs can be built on arm64 using docker buildx (tried without success for version 12.1)
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -46,7 +54,9 @@ jobs:
           context: ./processing_env
           push: true
           provenance: false # Avoid unknown/unknown platform
-          tags: ghcr.io/${{ github.repository }}/processing_env-dev:${{ github.sha }}
+          tags: |
+            ghcr.io/${{ github.repository }}/processing_env-dev:${{ github.sha }}
+            ghcr.io/${{ github.repository }}/processing_env-dev:${{ env.CURRENT_DATE }}
           platforms: linux/amd64 #,linux/arm64
           target: dev
           cache-from: type=local,src=/tmp/.buildx-cache
