@@ -24,7 +24,7 @@ SOURCE_META_URL = (
 SINK_LOCATION = "folimar-geotest-store001/landing/ch.swisstopo-vd.amtliche-vermessung"
 
 
-def get_expected_zip_blob_names(meta_url: str) -> set:
+def get_expected_zip_blob_names(meta_url: str) -> (set, dict):
     """
     Parse meta file and create a set of expected zip file paths.
     The full zip blob names are constructed from url and timestamp by
@@ -35,17 +35,22 @@ def get_expected_zip_blob_names(meta_url: str) -> set:
     https://data.geo.admin.ch/ch.swisstopo-vd.amtliche-vermessung/DM01AVCH24D/ITF/AG/4022.zip 2023-11-16
     2) Sink location: folimar-geotest-store001/landing/ch.swisstopo-vd.amtliche-vermessung
     3) Resulting full blob name: folimar-geotest-store001/landing/ch.swisstopo-vd.amtliche-vermessung/20231116_DM01AVCH24D_ITF_AG_4022.zip
+
+    Return a set of all blob names and a dictionary with blob names as keys and urls as values.
     """
     meta_text = fetch(meta_url).text
     blob_names = set()
+    blob_names_url_map = {}
     for line in meta_text.splitlines():
         zip_url, date_str = line.split(" ")
         # Only include urls containing SHP
         if "SHP" in zip_url:
             url_part = "_".join(zip_url.rsplit("/", 4)[1:])
             date_part = date_str.replace("-", "")
-            blob_names.add(f"{SINK_LOCATION}/{date_part}_{url_part}")
-    return blob_names
+            blob_name = f"{SINK_LOCATION}/{date_part}_{url_part}"
+            blob_names.add(blob_name)
+            blob_names_url_map[blob_name] = zip_url
+    return blob_names, blob_names_url_map
 
 
 def get_existing_zip_blob_names(sink_location: str) -> set:
@@ -66,7 +71,9 @@ def remove_outdated_zips(existing_zips: set, expected_zips: set) -> None:
         delete_blob(blob_name)
 
 
-def fetch_and_upload_zips(expected_zips: set, existing_zips: set) -> None:
+def fetch_and_upload_zips(
+    expected_zips: set, existing_zips: set, blobname_url_map: dict
+) -> None:
     """
     Fetch and store the new or updated zip files.
     """
@@ -74,12 +81,13 @@ def fetch_and_upload_zips(expected_zips: set, existing_zips: set) -> None:
     total_to_fetch = len(to_fetch)
     for i, blob_name in enumerate(to_fetch, 1):
         print(f"{i}/{total_to_fetch} Fetch and upload: {blob_name}")
-        write_blob(blob_name, fetch(blob_name).content, "wb")
+        url = blobname_url_map[blob_name]
+        write_blob(blob_name, fetch(url).content, "wb")
 
 
 def main():
     # Extract expected zip locations from metadata
-    expected_zips = get_expected_zip_blob_names(SOURCE_META_URL)
+    expected_zips, blobname_url_map = get_expected_zip_blob_names(SOURCE_META_URL)
 
     # Retrieve the list of currently stored zip files
     existing_zips = get_existing_zip_blob_names(SINK_LOCATION)
@@ -88,7 +96,7 @@ def main():
     remove_outdated_zips(existing_zips, expected_zips)
 
     # Fetch and store the new or updated zip files
-    fetch_and_upload_zips(expected_zips, existing_zips)
+    fetch_and_upload_zips(expected_zips, existing_zips, blobname_url_map)
 
     print("All done.")
 
