@@ -115,16 +115,17 @@ def main():
     counter = 0
     for url, new_date_str in new_meta.items():
         new_meta_lines.append(f"{url} {new_date_str}")
-        # Fallback to arbitrary very old date to trigger download if not exists.
+        # Fallback to arbitrary very old date if none is available for the URL.
         existing_date_str = existing_meta.get(url, "1970-01-01")
-        if should_download(new_date_str, existing_date_str, url):
-            print(f"Fetching ZIP (asof {existing_date_str} --> {new_date_str}): {url}")
+        download_flag = should_download(new_date_str, existing_date_str, url)
+        print(
+            f"{'DOWNLOAD' if download_flag else 'SKIPPING'} (asof {existing_meta.get(url, '<none yet>')} --> {new_date_str}): {url}"
+        )
+        if download_flag:
             fetch_and_save_zip(url)
             counter += 1
             if counter % 10 == 0:
                 upload_meta_file(new_meta_lines)
-        else:
-            print(f"SKIP {url}")
 
     upload_meta_file(new_meta_lines)
     print("Script execution completed.")
