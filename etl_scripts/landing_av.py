@@ -9,17 +9,12 @@
 # small subset of the data layers, but the ones of interest
 # should be available in the latest version across whole Switzerland.
 
-
 # The script does the following:
-# - Fetch the meta.txt file from the source url
-# - Check if previously downloaded zip files exist which do not appear anymore in the meta.txt file. If so, delete them.
-# - Compare the meta.txt file with the previously fetched one if it exists.
-# - Decide on which zip files need to be downloaded.
-# - Download the zip files and save them in the landing zone, overwriting existing ones.
-# - Save the meta.txt file in the landing zone, overwriting existing one.
+# - Fetch the meta.txt file from the source url and create a set of expected zip blob names.
+# - Delete zip files that do not exist anymore in the new metadata or are outdated.
+# - Fetch and upload zip files which are new or were updated.
 
-from datetime import datetime
-from utils_gcs import read_blob, write_blob, list_blobs, delete_blob
+from utils_gcs import write_blob, list_blobs, delete_blob
 from utils_misc import fetch
 
 # Constants for URLs and storage locations
@@ -27,108 +22,75 @@ SOURCE_META_URL = (
     "https://data.geo.admin.ch/ch.swisstopo-vd.amtliche-vermessung/meta.txt"
 )
 SINK_LOCATION = "folimar-geotest-store001/landing/ch.swisstopo-vd.amtliche-vermessung"
-META_FILE_NAME = "meta.txt"
 
 
-def get_zip_id(url_or_blob_name):
+def get_expected_zip_blob_names(meta_url: str) -> set:
     """
-    Extract the ZIP file ID from a URL or blob name.
-    Given an URL the ID are the last 4 parts of the url joined by underscores. Example:
-    URL: https://data.geo.admin.ch/ch.swisstopo-vd.amtliche-vermessung/DM01AVCH24D/ITF/AG/4022.zip
-    ID: DM01AVCH24D_ITF_AG_4022.zip
-
-    Given a blob name, the ID is the last part of the blob name. Example:
-    BLOB NAME: folimar-geotest-store001/landing/ch.swisstopo-vd.amtliche-vermessung/DM01AVCH24D_ITF_AG_4022.zip
-    ID: DM01AVCH24D_ITF_AG_4022.zip
+    Parse meta file and create a set of expected zip file paths.
+    The full zip blob names are constructed from url and timestamp by
+    joining the last 4 parts of the url by underscores and prefixing it
+    with the timestamp in the format YYYYMMDD and the sink location.
+    Example:
+    1) Meta file entry (url timestamp):
+    https://data.geo.admin.ch/ch.swisstopo-vd.amtliche-vermessung/DM01AVCH24D/ITF/AG/4022.zip 2023-11-16
+    2) Sink location: folimar-geotest-store001/landing/ch.swisstopo-vd.amtliche-vermessung
+    3) Resulting full blob name: folimar-geotest-store001/landing/ch.swisstopo-vd.amtliche-vermessung/20231116_DM01AVCH24D_ITF_AG_4022.zip
     """
-    if "http" in url_or_blob_name:
-        return "_".join(url_or_blob_name.rsplit("/", 4)[1:])
-    else:
-        return url_or_blob_name.rsplit("/", 1)[-1]
-
-
-def parse_meta_data(meta_text):
-    """Parse meta data into a dictionary mapping ZIP file URLs to their last update dates."""
-    meta_dict = {}
+    meta_text = fetch(meta_url).text
+    blob_names = set()
     for line in meta_text.splitlines():
         zip_url, date_str = line.split(" ")
-        meta_dict[zip_url] = date_str
-    return meta_dict
+        # Only include urls containing SHP
+        if "SHP" in zip_url:
+            url_part = "_".join(zip_url.rsplit("/", 4)[1:])
+            date_part = date_str.replace("-", "")
+            blob_names.add(f"{SINK_LOCATION}/{date_part}_{url_part}")
+    return blob_names
 
 
-def should_download(new_date_str, existing_date_str, url):
+def get_existing_zip_blob_names(sink_location: str) -> set:
     """
-    Determine whether a ZIP file should be downloaded.
-    Fow download consider ZIP files containing shapefiles (SHP) which are newer
-    than the existing ones or have not yet been downloaded.
+    Retrieve the list of currently stored zip files.
     """
-    new_date = datetime.strptime(new_date_str, "%Y-%m-%d")
-    existing_date = datetime.strptime(existing_date_str, "%Y-%m-%d")
-    return ("SHP" in url) and (new_date > existing_date)
+    return set(b for b in list_blobs(sink_location) if b.endswith(".zip"))
 
 
-def fetch_and_save_zip(url):
-    """Download a ZIP file and append its data to the meta lines."""
-    response = fetch(url)
-    location = f"{SINK_LOCATION}/{get_zip_id(url)}"
-    write_blob(location, response.content, "wb")
+def remove_outdated_zips(existing_zips: set, expected_zips: set) -> None:
+    """
+    Identify and remove outdated or deleted zip files.
+    """
+    to_delete = existing_zips - expected_zips
+    total_to_delete = len(to_delete)
+    for i, blob_name in enumerate(to_delete, 1):
+        print(f"{i}/{total_to_delete} Delete: {blob_name}")
+        delete_blob(blob_name)
 
 
-def delete_old_zips(existing_zip_ids, new_zip_ids):
-    """Delete ZIP files that are not in the new meta data."""
-    zips_to_delete = existing_zip_ids - new_zip_ids
-    for zip_id in zips_to_delete:
-        zip_location = f"{SINK_LOCATION}/{zip_id}"
-        print(f"Delete ZIP file which is not in new meta anymore: {zip_location}")
-        delete_blob(zip_location)
-
-
-def upload_meta_file(new_meta_lines):
-    """Update the meta file with the new meta data."""
-    print("Upload new meta file...")
-    new_meta_text = "\n".join(new_meta_lines)
-    write_blob(f"{SINK_LOCATION}/{META_FILE_NAME}", new_meta_text, "w")
+def fetch_and_upload_zips(expected_zips: set, existing_zips: set) -> None:
+    """
+    Fetch and store the new or updated zip files.
+    """
+    to_fetch = expected_zips - existing_zips
+    total_to_fetch = len(to_fetch)
+    for i, blob_name in enumerate(to_fetch, 1):
+        print(f"{i}/{total_to_fetch} Fetch and upload: {blob_name}")
+        write_blob(blob_name, fetch(blob_name).content, "wb")
 
 
 def main():
-    print("Fetch new meta data...")
-    new_meta_text = fetch(SOURCE_META_URL).text
-    new_meta = parse_meta_data(new_meta_text)
+    # Extract expected zip locations from metadata
+    expected_zips = get_expected_zip_blob_names(SOURCE_META_URL)
 
-    print("Delete old ZIP files no longer present in the new meta data...")
-    existing_zip_ids = {
-        get_zip_id(blob_name)
-        for blob_name in list_blobs(SINK_LOCATION)
-        if blob_name.endswith(".zip")
-    }
-    new_zip_ids = {get_zip_id(url) for url in new_meta.keys()}
-    delete_old_zips(existing_zip_ids, new_zip_ids)
+    # Retrieve the list of currently stored zip files
+    existing_zips = get_existing_zip_blob_names(SINK_LOCATION)
 
-    print("Fetch existing meta data...")
-    existing_meta_text = read_blob(f"{SINK_LOCATION}/{META_FILE_NAME}")
-    existing_meta = parse_meta_data(existing_meta_text) if existing_meta_text else {}
+    # Identify and remove outdated or deleted zip files
+    remove_outdated_zips(existing_zips, expected_zips)
 
-    print("Fetch and save new or updated ZIP files...")
-    # Continuously build the new meta file and upload every 10 zip downloads to make the process fail tolerant.
-    # If something goes wrong, the script can be restarted and will continue where it left off.
-    new_meta_lines = []
-    counter = 0
-    for url, new_date_str in new_meta.items():
-        new_meta_lines.append(f"{url} {new_date_str}")
-        # Fallback to arbitrary very old date if none is available for the URL.
-        existing_date_str = existing_meta.get(url, "1970-01-01")
-        download_flag = should_download(new_date_str, existing_date_str, url)
-        print(
-            f"{'DOWNLOAD' if download_flag else 'SKIPPING'} (asof {existing_meta.get(url, '<none yet>')} --> {new_date_str}): {url}"
-        )
-        if download_flag:
-            fetch_and_save_zip(url)
-            counter += 1
-            if counter % 10 == 0:
-                upload_meta_file(new_meta_lines)
+    # Fetch and store the new or updated zip files
+    fetch_and_upload_zips(expected_zips, existing_zips)
 
-    upload_meta_file(new_meta_lines)
-    print("Script execution completed.")
+    print("All done.")
 
 
 if __name__ == "__main__":
