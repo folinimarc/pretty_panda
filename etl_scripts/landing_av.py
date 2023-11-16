@@ -49,28 +49,29 @@ def get_zip_id(url_or_blob_name):
 
 def parse_meta_data(meta_text):
     """Parse meta data into a dictionary mapping ZIP file URLs to their last update dates."""
-    meta = {}
+    meta_dict = {}
     for line in meta_text.splitlines():
         zip_url, date_str = line.split(" ")
-        meta[zip_url] = datetime.strptime(date_str, "%Y-%m-%d")
-    return meta
+        meta_dict[zip_url] = date_str
+    return meta_dict
 
 
-def should_download(new_date, existing_date, url):
+def should_download(new_date_str, existing_date_str, url):
     """
     Determine whether a ZIP file should be downloaded.
     Fow download consider ZIP files containing shapefiles (SHP) which are newer
     than the existing ones or have not yet been downloaded.
     """
-    return "SHP" in url and (existing_date is None or new_date > existing_date)
+    new_date = datetime.strptime(new_date_str, "%Y-%m-%d")
+    existing_date = datetime.strptime(existing_date_str, "%Y-%m-%d")
+    return ("SHP" in url) and (new_date > existing_date)
 
 
 def fetch_and_save_zip(url):
     """Download a ZIP file and append its data to the meta lines."""
-    print(f"Downloading ZIP file from URL: {url}")
     response = fetch(url)
-    zip_location = f"{SINK_LOCATION}/{get_zip_id(url)}"
-    write_blob(zip_location, response.content, "wb")
+    location = f"{SINK_LOCATION}/{get_zip_id(url)}"
+    write_blob(location, response.content, "wb")
 
 
 def delete_old_zips(existing_zip_ids, new_zip_ids):
@@ -112,10 +113,12 @@ def main():
     # If something goes wrong, the script can be restarted and will continue where it left off.
     new_meta_lines = []
     counter = 0
-    for url, new_date in new_meta.items():
-        new_meta_lines.append(f"{url} {new_date.strftime('%Y-%m-%d')}")
-        existing_date = existing_meta.get(url)
-        if should_download(new_date, existing_date, url):
+    for url, new_date_str in new_meta.items():
+        new_meta_lines.append(f"{url} {new_date_str}")
+        # Fallback to arbitrary very old date to trigger download if not exists.
+        existing_date_str = existing_meta.get(url, "1970-01-01")
+        if should_download(new_date_str, existing_date_str, url):
+            print(f"Fetching ZIP (asof {existing_date_str} --> {new_date_str}): {url}")
             fetch_and_save_zip(url)
             counter += 1
             if counter % 10 == 0:
