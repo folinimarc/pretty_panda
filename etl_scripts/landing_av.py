@@ -54,16 +54,12 @@ def get_expected_zip_blob_names(meta_url: str) -> (set, dict):
 
 
 def get_existing_zip_blob_names(sink_location: str) -> set:
-    """
-    Retrieve the list of currently stored zip files.
-    """
+    """Retrieve the list of currently stored zip files."""
     return set(b for b in list_blobs(sink_location) if b.endswith(".zip"))
 
 
 def remove_outdated_zips(existing_zips: set, expected_zips: set) -> None:
-    """
-    Identify and remove outdated or deleted zip files.
-    """
+    """Identify and remove outdated or deleted zip files."""
     to_delete = existing_zips - expected_zips
     total_to_delete = len(to_delete)
     for i, blob_name in enumerate(to_delete, 1):
@@ -74,9 +70,7 @@ def remove_outdated_zips(existing_zips: set, expected_zips: set) -> None:
 def fetch_and_upload_zips(
     expected_zips: set, existing_zips: set, blobname_url_map: dict
 ) -> None:
-    """
-    Fetch and store the new or updated zip files.
-    """
+    """Fetch and store the new or updated zip files."""
     to_fetch = expected_zips - existing_zips
     total_to_fetch = len(to_fetch)
     for i, blob_name in enumerate(to_fetch, 1):
@@ -98,7 +92,7 @@ def main():
     # Fetch and store the new or updated zip files
     fetch_and_upload_zips(expected_zips, existing_zips, blobname_url_map)
 
-    print("All done.")
+    print("All done!")
 
 
 if __name__ == "__main__":
