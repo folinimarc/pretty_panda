@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 from google.cloud import storage
+from utils_misc import with_retry
 
 
+@with_retry(max_retries=5, retry_wait=3)
 def read_blob(location, mode="r"):
     """
     Read a blob from GCS using file-like IO.
@@ -18,6 +20,7 @@ def read_blob(location, mode="r"):
         return f.read()
 
 
+@with_retry(max_retries=5, retry_wait=3)
 def list_blobs(location):
     """
     Lists blobs in the bucket with the given prefix.
@@ -31,6 +34,7 @@ def list_blobs(location):
     return [f"{bucket_name}/{blob.name}" for blob in blobs]
 
 
+@with_retry(max_retries=5, retry_wait=3)
 def delete_blob(location):
     """
     Deletes a blob from the bucket.
@@ -46,6 +50,7 @@ def delete_blob(location):
         blob.delete()
 
 
+@with_retry(max_retries=5, retry_wait=3)
 def write_blob(location, data, mode="w"):
     """
     Write a blob from GCS using file-like IO.

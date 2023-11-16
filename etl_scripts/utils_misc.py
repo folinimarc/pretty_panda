@@ -21,7 +21,7 @@ def with_retry(max_retries=5, retry_wait=3):
                         n_retries += 1
                     else:
                         raise Exception(
-                            f"Fetching failed after {max_retries} retries for {func.__name__} with args {args} and kwargs {kwargs}! Original exception: {e}"
+                            f"Exception raised after {max_retries} retries for {func.__name__} with args {args} and kwargs {kwargs}! Original exception: {e}"
                         )
             return r
 
