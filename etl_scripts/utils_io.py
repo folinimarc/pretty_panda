@@ -1,13 +1,34 @@
 # -*- coding: utf-8 -*-
-from utils import retry
 import os
 import re
 import shutil
 from abc import ABC, abstractmethod
-from typing import List, Optional, Union
+from typing import Callable, List, Optional, Union, Any
 from google.cloud import storage
 from datetime import datetime
 import json
+import functools
+import time
+
+# --------------------------------------------
+# RETRY DECORATOR
+# --------------------------------------------
+
+
+def retry(operation: Callable) -> Callable:
+    @functools.wraps(operation)
+    def wrapped(*args, **kwargs) -> Any:
+        max_attempts = 5
+        for attempt in range(max_attempts):
+            try:
+                return operation(*args, **kwargs)
+            except Exception as e:
+                if attempt < max_attempts - 1:
+                    time.sleep(2**attempt)
+                else:
+                    raise e
+
+    return wrapped
 
 
 # --------------------------------------------
@@ -114,8 +135,7 @@ class LocalStorageBackend(StorageBackend):
 
     def create_directory_for_file(self, file_path: str) -> None:
         """Create a local directory and its parent directories if they do not exist."""
-        full_path = self._full_path(file_path)
-        directory_path = os.path.dirname(full_path) + "/"
+        directory_path = os.path.dirname(file_path) + "/"
         self.create_directory(directory_path)
 
     def create_directory(self, directory_path: str) -> None:
@@ -130,10 +150,12 @@ class LocalStorageBackend(StorageBackend):
 
     def gdal_path(self, file_path: str) -> str:
         """Get the GDAL-compatible path for a file or directory."""
+        self.create_directory_for_file(file_path)
         return os.path.abspath(self._full_path(file_path))
 
     def absolute_path(self, file_path: str) -> str:
         """Get the absolute path for a file or directory."""
+        self.create_directory_for_file(file_path)
         return os.path.abspath(self._full_path(file_path))
 
 
@@ -199,8 +221,7 @@ class GoogleCloudStorageStorageBackend(StorageBackend):
 
     def create_directory_for_file(self, file_path: str) -> None:
         """Create a pseudo-directory in Google Cloud Storage."""
-        full_path = self._full_path(file_path)
-        directory_path = os.path.dirname(full_path) + "/"
+        directory_path = os.path.dirname(file_path) + "/"
         self.create_directory(directory_path)
 
     @retry
@@ -223,11 +244,13 @@ class GoogleCloudStorageStorageBackend(StorageBackend):
 
     def gdal_path(self, file_path: str) -> str:
         """Get the GDAL-compatible path for a file or directory."""
+        self.create_directory_for_file(file_path)
         return "/vsigs/" + self.bucket.name + "/" + self._full_path(file_path)
 
     def absolute_path(self, file_path: str) -> str:
         """Get the absolute path for a file or directory."""
         # In the context of GCS, the absolute path is the full URI to the object.
+        self.create_directory_for_file(file_path)
         return f"gs://{self.bucket.name}/{self._full_path(file_path)}"
 
 
@@ -266,8 +289,19 @@ class VersioningScheme(ABC):
 # Additional utility class for handling versioning
 class YYYYMMDDFilenamePrefix(VersioningScheme):
     @staticmethod
+    def assert_valid_version(version: str) -> None:
+        """Check if a version is valid. Raise exception if not valid."""
+        assert (
+            len(version) == 8
+        ), f"Version must be in YYYYMMDD format. Found: {version}"
+        assert (
+            datetime.strftime(datetime.strptime(version, "%Y%m%d"), "%Y%m%d") == version
+        ), f"Version must be in YYYYMMDD format. Found: {version}"
+
+    @staticmethod
     def construct_versioned_filename(file_path: str, version: str) -> str:
         """Construct a versioned filename from a file path and version."""
+        YYYYMMDDFilenamePrefix.assert_valid_version(version)
         directory, filename = os.path.split(file_path)
         versioned_filename = f"{version}__{filename}"
         return os.path.join(directory, versioned_filename)
@@ -280,19 +314,10 @@ class YYYYMMDDFilenamePrefix(VersioningScheme):
         return match.group(1) if match else None
 
     @staticmethod
-    def assert_valid_version(version: str) -> None:
-        """Check if a version is valid. Raise exception if not valid."""
-        assert (
-            len(version) == 8
-        ), f"Version must be in YYYYMMDD format. Found: {version}"
-        assert (
-            datetime.strftime(datetime.strptime(version, "%Y%m%d"), "%Y%m%d") == version
-        ), f"Version must be in YYYYMMDD format. Found: {version}"
-
-    @staticmethod
     def sort_key(version: str) -> datetime:
         """Given a version, return a value that is used for sorting. Used as argument key
         in built-in sorted() funtion. Larger is assumed to be more recent."""
+        YYYYMMDDFilenamePrefix.assert_valid_version(version)
         return datetime.strptime(version, "%Y%m%d")
 
 
@@ -368,14 +393,12 @@ class VersionedFile(File):
         self.versioning_scheme = versioning_scheme
 
     def read(self, version: str, mode: str = "r") -> Optional[str]:
-        self.versioning_scheme.assert_valid_version(version)
         versioned_path = self.versioning_scheme.construct_versioned_filename(
             self.file_path, version
         )
         return self.storage_backend.read_file(versioned_path, mode)
 
     def write(self, data: Union[str, bytes], version: str, mode: str = "w") -> None:
-        self.versioning_scheme.assert_valid_version(version)
         versioned_path = self.versioning_scheme.construct_versioned_filename(
             self.file_path, version
         )
@@ -383,14 +406,12 @@ class VersionedFile(File):
         self.storage_backend.write_file(versioned_path, data, mode)
 
     def exists(self, version: str) -> bool:
-        self.versioning_scheme.assert_valid_version(version)
         versioned_path = self.versioning_scheme.construct_versioned_filename(
             self.file_path, version
         )
         return self.storage_backend.file_exists(versioned_path)
 
     def delete(self, version: str) -> None:
-        self.versioning_scheme.assert_valid_version(version)
         versioned_path = self.versioning_scheme.construct_versioned_filename(
             self.file_path, version
         )
@@ -418,14 +439,12 @@ class VersionedFile(File):
         return None
 
     def gdal_path(self, version: str) -> str:
-        self.versioning_scheme.assert_valid_version(version)
         versioned_path = self.versioning_scheme.construct_versioned_filename(
             self.file_path, version
         )
         return self.storage_backend.gdal_path(versioned_path)
 
     def absolute_path(self, version: str) -> str:
-        self.versioning_scheme.assert_valid_version(version)
         versioned_path = self.versioning_scheme.construct_versioned_filename(
             self.file_path, version
         )
