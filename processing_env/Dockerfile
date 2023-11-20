@@ -45,9 +45,9 @@ ENV SHELL=/bin/bash
 #-----------------
 # Clean up
 #-----------------
-# RUN apt-get purge -y build-essential \
-#     && apt-get clean \
-#     && rm -rf /var/lib/apt/lists/*
+RUN apt-get purge -y build-essential \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 
 # ############################
