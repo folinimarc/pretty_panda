@@ -1,9 +1,4 @@
 {
-  "build": {
-    "context": "../processing_env",
-    "dockerfile": "../processing_env/Dockerfile",
-    "target": "dev"
-  },
   "customizations": {
     "vscode": {
       "extensions": [
@@ -36,6 +31,7 @@
       }
     }
   },
+  "image": "ghcr.io/laiskasiili/pretty_panda/processing_env-dev:2023-11-20-21-24-33",
   "name": "DevContainer (python, poetry)",
   "postCreateCommand": "pre-commit install",
   "runArgs": [
