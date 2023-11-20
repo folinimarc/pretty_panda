@@ -2,6 +2,7 @@
 # temporary test directories
 qgiscompile
 qgis_tests
+data
 
 #---------------
 # Misc
