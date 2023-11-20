@@ -19,14 +19,14 @@ WORKDIR /app
 RUN ln -snf /usr/share/zoneinfo/$CONTAINER_TIMEZONE /etc/localtime && echo $CONTAINER_TIMEZONE > /etc/timezone
 
 # Install git
-RUN apt update && \
+RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     git
 
 # Install python packages.
 # Add directive for shapely and pygeos to use existing
 # library (requires python3-dev and build-essentials).
-RUN apt update && \
+RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     build-essential \
     python3-dev \
@@ -45,9 +45,9 @@ ENV SHELL=/bin/bash
 #-----------------
 # Clean up
 #-----------------
-RUN apt-get purge -y build-essential \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+# RUN apt-get purge -y build-essential \
+#     && apt-get clean \
+#     && rm -rf /var/lib/apt/lists/*
 
 
 # ############################
