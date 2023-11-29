@@ -10,96 +10,290 @@ The zip files are updated individually. We are only interested in a
 small subset of the data layers, but the ones of interest
 should be available in the latest version across whole Switzerland.
 
-The script does the following:
-- Fetch the meta.txt file from the source url and create a set of expected zip blob names.
-- Delete zip files that do not exist anymore in the new metadata or are outdated.
-- Fetch and upload zip files which are new or were updated.
+Note: For some cantons, data is not freely available but needs an applicationa
+and green-light. See here: https://geodienste.ch/services/av
 """
 
-from typing import List, Tuple
-from utils_io import (
-    LocalStorageBackend,
-    GoogleCloudStorageStorageBackend,
-    VersionedFile,
-    YYYYMMDDFilenamePrefix,
-)
-from utils import fetch
+from util import PandaPath, extract_zip_file
+import geopandas as gpd
+import pandas as pd
 from datetime import datetime
+from multiprocessing.pool import ThreadPool, Pool
+import multiprocessing as mp
+import subprocess
+from typing import List, Dict, Set, Tuple, Iterable
+import logging
 
-sink_storage_backend = GoogleCloudStorageStorageBackend(
-    bucket_name="folimar-geotest-store001",
-    root_directory="landing/ch.swisstopo-vd.amtliche-vermessung/",
+logging.basicConfig(
+    format="%(asctime)s %(levelname)-8s %(message)s",
+    level=logging.INFO,
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 
-# sink_storage_backend = LocalStorageBackend(
-#     root_directory="./data/landing/ch.swisstopo-vd.amtliche-vermessung/",
-# )
-
-# Constants for URLs and storage locations
-SOURCE_META_URL = (
+SOURCE_META_URL = PandaPath(
     "https://data.geo.admin.ch/ch.swisstopo-vd.amtliche-vermessung/meta.txt"
 )
-SINK_META_FILE = VersionedFile(
-    file_path="meta.txt",
-    storage_backend=sink_storage_backend,
-    versioning_scheme=YYYYMMDDFilenamePrefix(),
+
+SCRATCH_FOLDER = PandaPath(
+    "/workspaces/pretty_panda/data/scratch/ch.swisstopo-vd.amtliche-vermessung"
 )
 
+SINK_FOLDER = PandaPath(
+    "/workspaces/pretty_panda/data/landing/ch.swisstopo-vd.amtliche-vermessung"
+)
+SINK_FILE_GEBAEUDEFLAECHE = SINK_FOLDER / "gebaeudeflaeche.fgb"
+SINK_FILE_GEBAEUDENUMMER = SINK_FOLDER / "gebaeudenummer.fgb"
+SINK_FILE_LIEGENSCHAFT = SINK_FOLDER / "liegenschaft.fgb"
 
-def parse_meta(meta_url: str) -> List[Tuple[str, str, str]]:
+
+def parse_meta(sink_raw_folder: PandaPath) -> List[Dict[str, PandaPath]]:
     """
-    Parse metadata and return a list of tuples with the filename,
-    version (format yyyymmdd) and url. Only consider urls with string "SHP",
-    because we are only interested in shapefiles.
-    The filename is constructed by joining the last 4 parts of the url
-    by underscores. Example:
+    Parse metadata and return a list of tuples with the zip source and sink paths.
+    Only consider urls with string "SHP", because we are only interested
+    in shapefiles. The full filename is constructed by joining the last 4 parts of the url
+    by underscores and a timestamp prefix in format YYYYMMDD. Example:
     - Meta file line: https://data.geo.admin.ch/ch.swisstopo-vd.amtliche-vermessung/DM01AVCH24D/SHP/AG/4022.zip 2023-11-16
-    - Filename: DM01AVCH24D_SHP_AG_4022.zip
+    - Filename: 20231116_DM01AVCH24D_SHP_AG_4022.zip
     """
-    meta_text = fetch(meta_url).text
-    items = []
+    meta_text = PandaPath(SOURCE_META_URL).read_text()
+    zip_sink_source_map = {}
     for line in meta_text.splitlines():
         zip_url, date_str = line.split(" ")
-        # Only include urls containing SHP
         if "SHP" in zip_url:
+            asof = datetime.strptime(date_str, "%Y-%m-%d")
             filename = "_".join(zip_url.rsplit("/", 4)[1:])
-            yyyymmdd_version = date_str.replace("-", "")
-            items.append((filename, yyyymmdd_version, zip_url))
-    return items
+            timestamp = asof.strftime("%Y%m%d")
+            zip_sink = sink_raw_folder / f"{timestamp}_{filename}"
+            zip_source = PandaPath(zip_url)
+            zip_sink_source_map[zip_sink] = zip_source
+    return zip_sink_source_map
 
 
-def main():
-    print(f"{datetime.now():%Y%m%d-%H:%M:%S} Start script {__file__}")
-    # Parse meta file and create a list of tuples with filename, version and url.
-    meta_items = parse_meta(SOURCE_META_URL)
-    total_items = len(meta_items)
-    for i, (filename, yyyymmdd_version, url) in enumerate(meta_items, 1):
-        # Create versioned file object for each zip file.
-        f = VersionedFile(
-            file_path=filename,
-            storage_backend=sink_storage_backend,
-            versioning_scheme=YYYYMMDDFilenamePrefix(),
-        )
-        # Check if a file with the version from the meta file already exists. If not, download and upload it.
-        if yyyymmdd_version not in f.list_versions():
-            print(
-                f"{i}/{total_items} New version available: {yyyymmdd_version} for {filename}. Download from {url} and save as {f.absolute_path(yyyymmdd_version)}"
-            )
-            f.write(fetch(url).content, yyyymmdd_version, "wb")
-            assert f.exists(yyyymmdd_version)
-        else:
-            print(
-                f"{i}/{total_items} Version {yyyymmdd_version} already exists for {filename}. Skipping download."
-            )
+def delete_outdated_zip(
+    existing: Set[PandaPath], zip_sink_source_map: Dict[PandaPath, PandaPath]
+) -> None:
+    """
+    Delete zip files that do not exist anymore in the new metadata or are outdated.
+    """
+    incoming = set(zip_sink_source_map.keys())
+    to_delete = existing.difference(incoming)
+    for p in to_delete:
+        p.unlink()
 
-    # Upload meta file with todays date as version. This is necessary to determine in
-    # future processing, which zip archives to use.
-    meta_version = datetime.now().strftime("%Y%m%d")
-    meta_text = "\n".join(" ".join(item) for item in meta_items)
-    SINK_META_FILE.write(meta_text, meta_version, "w")
 
-    print(f"{datetime.now():%Y%m%d-%H:%M:%S} All done!")
+def download_new_zip(
+    existing: List[PandaPath], zip_sink_source_map: Dict[PandaPath, PandaPath]
+) -> None:
+    """
+    Download zip files that are new or were updated.
+    Do this multithreadedd.
+    """
+
+    def _download(args: Tuple[PandaPath, PandaPath]) -> None:
+        sink_path, source_path = args
+        sink_path.write_bytes(source_path.read_bytes())
+        return f"Saved {sink_path.name}"
+
+    incoming = set(zip_sink_source_map.keys())
+    to_download = incoming.difference(existing)
+    sink_source_args = [
+        (sink_path, zip_sink_source_map[sink_path]) for sink_path in to_download
+    ]
+    with ThreadPool(8) as pool:
+        for i, result_msg in enumerate(
+            pool.imap_unordered(_download, sink_source_args), 1
+        ):
+            logging.info(f"{i}/{len(sink_source_args)} {result_msg}")
+
+
+def common_gdf_processing(
+    gdf: gpd.GeoDataFrame, expected_geom_types=Iterable[str]
+) -> gpd.GeoDataFrame:
+    expected_geom_types = set(expected_geom_types)
+    # Assert crs is CH1903+/LV95 (epsg 2056).
+    if not gdf.crs:
+        gdf = gdf.set_crs("epsg:2056")
+    assert (
+        gdf.crs.to_epsg() == 2056
+    ), f"CRS is not CH1903+/LV95 (epsg 2056) but {gdf.crs}"
+
+    # Fix invalid geometries
+    gdf = gdf.set_geometry(gdf.geometry.make_valid())
+
+    # Some files contain geomtry collections, for example as a result of make_valid.
+    # Explode them and only retain expected geometry types.
+    gdf_only_geomcollection = gdf[gdf.geom_type == "GeometryCollection"]
+    gdf_not_geomcollection = gdf[gdf.geom_type != "GeometryCollection"]
+    gdf_only_geomcollection = gdf_only_geomcollection.explode(ignore_index=True)
+    gdf = pd.concat(
+        [gdf_not_geomcollection, gdf_only_geomcollection], ignore_index=True
+    )
+    gdf = gdf[gdf.geom_type.isin(expected_geom_types)]
+
+    # Drop invalid and empty geometries
+    gdf = gdf[gdf.geometry.is_valid & ~(gdf.geometry.isna() | gdf.geometry.is_empty)]
+
+    return gdf
+
+
+def create_gebaeudeflaeche_chunk(zip_extract_folder: PandaPath) -> None:
+    p = list(zip_extract_folder.glob("**/de/Bo_BoFlaeche_A.shp"))
+    if not p:
+        return None
+    gdf = gpd.read_file(p[0], engine="pyogrio")
+    # Only work with buildings
+    gdf = gdf[gdf["ART_TXT"] == "Gebaeude"]
+    # Add information about where data came from
+    gdf["av_source"] = zip_extract_folder.stem
+    # Common processing
+    gdf = common_gdf_processing(gdf, expected_geom_types=["Polygon", "MultiPolygon"])
+    assert (
+        gdf.geometry.is_valid.all()
+    ), f"Found invalid geometries {zip_extract_folder.stem}"
+    return gdf if len(gdf) > 0 else None
+
+
+def create_gebaeudenummer_chunk(zip_extract_folder: PandaPath) -> None:
+    p = list(zip_extract_folder.glob("**/de/Bo_GebaeudenummerPos.shp"))
+    if not p:
+        return None
+    gdf = gpd.read_file(p[0], engine="pyogrio")
+    gdf["av_source"] = zip_extract_folder.stem
+    gdf = common_gdf_processing(gdf, expected_geom_types=["Point", "MultiPoint"])
+    assert (
+        gdf.geometry.is_valid.all()
+    ), f"Found invalid geometries {zip_extract_folder.stem}"
+    return gdf if len(gdf) > 0 else None
+
+
+def create_liegenschaft_chunk(zip_extract_folder: PandaPath) -> None:
+    p = list(zip_extract_folder.glob("**/de/Li_Liegenschaft_A.shp"))
+    if not p:
+        return None
+    gdf = gpd.read_file(p[0], engine="pyogrio")
+    gdf["av_source"] = zip_extract_folder.stem
+    gdf = common_gdf_processing(gdf, expected_geom_types=["Polygon", "MultiPolygon"])
+    assert (
+        gdf.geometry.is_valid.all()
+    ), f"Found invalid geometries {zip_extract_folder.stem}"
+    return gdf if len(gdf) > 0 else None
+
+
+def process_zip(args) -> str:
+    zip_path, tmp_gebaeudeflaeche, tmp_gebaeudenummer, tmp_liegenschaft = args
+    # Extract zip
+    zip_extract_folder = extract_zip_file(zip_path, SCRATCH_FOLDER / "zip")
+    # Gebaudeflaeche
+    gdf = create_gebaeudeflaeche_chunk(zip_extract_folder)
+    if gdf is not None:
+        p = tmp_gebaeudeflaeche / f"{zip_path.stem}.gpkg"
+        gdf.to_file(p, engine="pyogrio", SPATIAL_INDEX="NO")
+    # Gebaudenummer
+    gdf = create_gebaeudenummer_chunk(zip_extract_folder)
+    if gdf is not None:
+        p = tmp_gebaeudenummer / f"{zip_path.stem}.gpkg"
+        gdf.to_file(p, engine="pyogrio", SPATIAL_INDEX="NO")
+    # Liegenschaft
+    gdf = create_liegenschaft_chunk(zip_extract_folder)
+    if gdf is not None:
+        p = tmp_liegenschaft / f"{zip_path.stem}.gpkg"
+        gdf.to_file(p, engine="pyogrio", SPATIAL_INDEX="NO")
+    return f"Processed {zip_path.name}"
+
+
+def combine(chunks_folder) -> str:
+    tmp_combined_file = chunks_folder.parent / "combined.gpkg"
+    file_chunks = list(chunks_folder.glob("*.gpkg"))
+    for file_chunk in file_chunks:
+        print(f"Combining {file_chunk}")
+        command = [
+            "ogr2ogr",
+            "-update",
+            "-append",
+            "--debug",
+            "OFF",
+            "-lco",
+            "SPATIAL_INDEX=NO",
+            tmp_combined_file.as_gdal(),
+            file_chunk.as_gdal(),
+        ]
+        subprocess.run(command, check=True)
+    return f"Combined {chunks_folder}"
+
+
+def upload(args) -> str:
+    chunks_folder, sink_file = args
+    tmp_combined_file = chunks_folder.parent / "combined.gpkg"
+    command = [
+        "ogr2ogr",
+        "--debug",
+        "OFF",
+        "-nln",
+        sink_file.stem,
+        "-nlt",
+        "PROMOTE_TO_MULTI",
+        sink_file.as_gdal(),
+        tmp_combined_file.as_gdal(),
+    ]
+    subprocess.run(command, check=True)
+    return f"Uploaded {tmp_combined_file} to {sink_file}"
+
+
+def landing__av():
+    logging.info(f"Start {__name__}")
+
+    logging.info(f"Gathering existing zip files...")
+    sink_raw_folder = SINK_FOLDER / "raw"
+    sink_raw_folder.mkdir(parents=True, exist_ok=True)
+    existing_zip = set(sink_raw_folder.glob("*.zip"))
+
+    logging.info(f"Reading meta data...")
+    zip_sink_source_map = parse_meta(sink_raw_folder)
+
+    logging.info(f"Delete outdated zip files...")
+    delete_outdated_zip(existing_zip, zip_sink_source_map)
+
+    logging.info(f"Download zip files...")
+    download_new_zip(existing_zip, zip_sink_source_map)
+
+    logging.info(f"Extract data from zip files...")
+    tmp_gebaeudeflaeche = SCRATCH_FOLDER / "gebaeudeflaeche" / "chunks"
+    tmp_gebaeudeflaeche.parent.clean_dir()
+    tmp_gebaeudeflaeche.mkdir(parents=True, exist_ok=True)
+    tmp_gebaeudenummer = SCRATCH_FOLDER / "gebaeudenummer" / "chunks"
+    tmp_gebaeudenummer.parent.clean_dir()
+    tmp_gebaeudenummer.mkdir(parents=True, exist_ok=True)
+    tmp_liegenschaft = SCRATCH_FOLDER / "liegenschaft" / "chunks"
+    tmp_liegenschaft.parent.clean_dir()
+    tmp_liegenschaft.mkdir(parents=True, exist_ok=True)
+
+    args = [
+        (zip_path, tmp_gebaeudeflaeche, tmp_gebaeudenummer, tmp_liegenschaft)
+        for zip_path in sink_raw_folder.glob("*.zip")
+    ]
+    with Pool(processes=mp.cpu_count() - 1) as pool:
+        for i, result_msg in enumerate(pool.imap_unordered(process_zip, args), 1):
+            logging.info(f"{i}/{len(args)} {result_msg}")
+
+    logging.info(f"Combine...")
+    tmp_sink_map = {
+        tmp_gebaeudeflaeche: SINK_FILE_GEBAEUDEFLAECHE,
+        tmp_gebaeudenummer: SINK_FILE_GEBAEUDENUMMER,
+        tmp_liegenschaft: SINK_FILE_LIEGENSCHAFT,
+    }
+    args = list(tmp_sink_map.keys())
+    with Pool(processes=3) as pool:
+        for i, result_msg in enumerate(pool.imap_unordered(combine, args), 1):
+            logging.info(f"{i}/{len(args)} {result_msg}")
+
+    logging.info(f"Upload...")
+    args = [kv for kv in tmp_sink_map.items()]
+    with Pool(processes=3) as pool:
+        for i, result_msg in enumerate(pool.imap_unordered(upload, args), 1):
+            logging.info(f"{i}/{len(args)} {result_msg}")
+
+    logging.info(f"All done!")
 
 
 if __name__ == "__main__":
-    main()
+    landing__av()

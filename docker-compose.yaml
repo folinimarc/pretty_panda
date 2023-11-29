@@ -1,0 +1,10 @@
+version: '3.8'
+
+services:
+  jupyterlab:
+    image: ghcr.io/laiskasiili/pretty_panda/processing_env-dev:2023-11-20-21-24-33
+    working_dir: /workspace
+    ports:
+      - "8888:8888"
+    volumes:
+      - .:/workspace

@@ -28,8 +28,12 @@ pysal
 #-------------
 OWSLib
 
+# GCS IO
+#-------------
+gcsfs # universal_pathlib dependency for google cloud storage
+universal_pathlib
+
 # MISC
 #-------------
-google-cloud-storage # interact with cloud storage
 jupyterlab # allows to write rich scripts (notebooks) and run code interactively in the browser
 ipyleaflet # interactive maps in jupyterlab
