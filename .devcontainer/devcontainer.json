@@ -31,7 +31,7 @@
       }
     }
   },
-  "image": "ghcr.io/laiskasiili/pretty_panda/processing_env-dev:2023-11-20-21-24-33",
+  "image": "ghcr.io/laiskasiili/pretty_panda/processing_env-dev:2023-11-29-19-57-15",
   "name": "DevContainer (python, poetry)",
   "postCreateCommand": "pre-commit install",
   "runArgs": [
