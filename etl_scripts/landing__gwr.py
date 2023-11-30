@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import geopandas as gpd
 import logging
+import subprocess
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)-8s %(message)s",
@@ -22,9 +23,9 @@ SOURCE_OUTDATED_DAYS = 14
 
 SCRATCH_FOLDER = PandaPath("/workspaces/pretty_panda/data/scratch/ch.bfs.gwr")
 
-# SINK_FOLDER = PandaPath("gs://folimar-geotest-store001/landing/ch.bfs.gwr")
-SINK_FOLDER = PandaPath("/workspaces/pretty_panda/data/landing/ch.bfs.gwr")
-SINK_BUILDINGS_FILE = SINK_FOLDER / "buildings.fgb"
+SINK_FOLDER = PandaPath("gs://folimar-geotest-store001/landing/ch.bfs.gwr")
+# SINK_FOLDER = PandaPath("/workspaces/pretty_panda/data/landing/ch.bfs.gwr")
+SINK_FILE = SINK_FOLDER / "buildings.fgb"
 SINK_META_FILE = SINK_FOLDER / "processing_metadata.json"
 
 
@@ -53,9 +54,28 @@ def create_buildings_file(extracted_zip_folder):
     logging.info(f"Join geometries and data...")
     buildings = buildings.join(building_data, how="left").reset_index()
 
-    logging.info(f"Write data to {SINK_BUILDINGS_FILE}...")
-    SINK_BUILDINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    buildings.to_file(SINK_BUILDINGS_FILE.as_gdal(), engine="pyogrio")
+    scratch_file = SCRATCH_FOLDER / "buildings.fgb"
+    logging.info(f"Writing temprary file to {scratch_file}...")
+    SCRATCH_FOLDER.mkdir(parents=True, exist_ok=True)
+    buildings.to_file(scratch_file, engine="pyogrio")
+
+    return scratch_file
+
+
+def upload(scratch_file: PandaPath):
+    logging.info(f"Uploading to {SINK_FILE}...")
+    command = [
+        "ogr2ogr",
+        "-progress",
+        "--debug",
+        "OFF",
+        "-makevalid",
+        "-nlt",
+        "PROMOTE_TO_MULTI",
+        SINK_FILE.as_gdal(),
+        scratch_file.as_gdal(),
+    ]
+    subprocess.run(command, check=True)
 
 
 def landing__gwr():
@@ -77,8 +97,11 @@ def landing__gwr():
     logging.info(f"Extracting zip file to scratch {SCRATCH_FOLDER}...")
     extracted_folder = extract_zip_file(sink_raw_file, SCRATCH_FOLDER)
 
-    logging.info(f"Creating {SINK_BUILDINGS_FILE}...")
-    create_buildings_file(extracted_folder)
+    logging.info(f"Processing {extracted_folder}...")
+    scratch_file = create_buildings_file(extracted_folder)
+
+    logging.info(f"Uploading to {SINK_FILE}...")
+    upload(scratch_file)
 
     logging.info("Cleaning up scratch folder...")
     SCRATCH_FOLDER.clean_dir()

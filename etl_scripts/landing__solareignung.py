@@ -28,10 +28,12 @@ SOURCE_STAC_ITEM = PandaPath(
 SOURCE_STAC_ASSET_KEY = "solarenergie-eignung-daecher_2056.gdb.zip"
 SOURCE_FILE_GDB_LAYERNAME = "SOLKAT_CH_DACH"
 
-# SINK_FOLDER = PandaPath("gs://folimar-geotest-store001/landing/test_ch.bfe.solarenergie-eignung")
 SINK_FOLDER = PandaPath(
-    "/workspaces/pretty_panda/data/landing/ch.bfe.solarenergie-eignung"
+    "gs://folimar-geotest-store001/landing/test_ch.bfe.solarenergie-eignung"
 )
+# SINK_FOLDER = PandaPath(
+#     "/workspaces/pretty_panda/data/landing/ch.bfe.solarenergie-eignung"
+# )
 SINK_FILE_SOLARDAECHER = SINK_FOLDER / "solarenergie-eignung-daecher_2056.fgb"
 SINK_META_FILE = SINK_FOLDER / "processing_metadata.json"
 

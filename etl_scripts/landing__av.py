@@ -39,8 +39,11 @@ SCRATCH_FOLDER = PandaPath(
 )
 
 SINK_FOLDER = PandaPath(
-    "/workspaces/pretty_panda/data/landing/ch.swisstopo-vd.amtliche-vermessung"
+    "gs://folimar-geotest-store001/landing/ch.swisstopo-vd.amtliche-vermessung"
 )
+# SINK_FOLDER = PandaPath(
+#     "/workspaces/pretty_panda/data/landing/ch.swisstopo-vd.amtliche-vermessung"
+# )
 SINK_FILE_GEBAEUDEFLAECHE = SINK_FOLDER / "gebaeudeflaeche.fgb"
 SINK_FILE_GEBAEUDENUMMER = SINK_FOLDER / "gebaeudenummer.fgb"
 SINK_FILE_LIEGENSCHAFT = SINK_FOLDER / "liegenschaft.fgb"
