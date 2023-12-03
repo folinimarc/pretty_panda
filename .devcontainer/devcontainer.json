@@ -6,7 +6,8 @@
         "github.copilot",
         "hediet.vscode-drawio",
         "njpwerner.autodocstring",
-        "github.vscode-github-actions"
+        "github.vscode-github-actions",
+        "pharndt.vscode-markdown-table"
       ],
       "settings": {
         "[python]": {
