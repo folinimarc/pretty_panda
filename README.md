@@ -15,12 +15,12 @@ Open data from Switzerland will be used, because the data is high quality, readi
 - Allow multiple developers to efficiently perform exploratory analysis on stored datasets.
 
 ## Milestones
-| Milestone                                                                                         | Status      |
-| ------------------------------------------------------------------------------------------------- | ----------- |
-| Containerized python geo-ecosystem available on github container registry.                        | Done        |
-| Find way to interact with blob storage and filesystem in a unified way.                           | Done        |
-| Create processing scripts to get building roof solar potential for city of Biel.                  | Started     |
-| Test deployment of script in containerized processing environment on Google Batch.                | Not started |
-| Create ETL pipelines to batch-process building root solar potential for Switzerland periodically. | Not started |
-| Test deployment of ETL pipeline in containerized processing environment on Google Batch.          | Not started |
-|                                                                                                   |             |
+| Milestone                                                                                                        | Status      |
+| ---------------------------------------------------------------------------------------------------------------- | ----------- |
+| Containerized python geo-ecosystem available on github container registry.                                       | Done        |
+| Find way to interact with blob storage and filesystem in a unified way.                                          | Done        |
+| Create processing scripts to get building roof solar potential for city of Biel.                                 | Started     |
+| Test deployment of script in containerized processing environment on Google Batch.                               | Not started |
+| Create fault-tolerant ETL pipelines to batch-process building root solar potential for Switzerland periodically. | Not started |
+| Test deployment of ETL pipeline in containerized processing environment on Google Batch.                         | Not started |
+|                                                                                                                  |             |
