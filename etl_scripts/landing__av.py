@@ -18,11 +18,11 @@ from util import PandaPath, extract_zip_file
 import geopandas as gpd
 import pandas as pd
 from datetime import datetime
-from multiprocessing.pool import ThreadPool, Pool
-import multiprocessing as mp
+from multiprocessing.pool import Pool
 import subprocess
 from typing import List, Dict, Set, Tuple, Iterable
 import logging
+import multiprocessing as mp
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)-8s %(message)s",
@@ -84,29 +84,11 @@ def delete_outdated_zip(
         p.unlink()
 
 
-def download_new_zip(
-    existing: List[PandaPath], zip_sink_source_map: Dict[PandaPath, PandaPath]
-) -> None:
-    """
-    Download zip files that are new or were updated.
-    Do this multithreadedd.
-    """
-
-    def _download(args: Tuple[PandaPath, PandaPath]) -> None:
-        sink_path, source_path = args
-        sink_path.write_bytes(source_path.read_bytes())
-        return f"Saved {sink_path.name}"
-
-    incoming = set(zip_sink_source_map.keys())
-    to_download = incoming.difference(existing)
-    sink_source_args = [
-        (sink_path, zip_sink_source_map[sink_path]) for sink_path in to_download
-    ]
-    with ThreadPool(8) as pool:
-        for i, result_msg in enumerate(
-            pool.imap_unordered(_download, sink_source_args), 1
-        ):
-            logging.info(f"{i}/{len(sink_source_args)} {result_msg}")
+def download_zip(args: Tuple[PandaPath, PandaPath]) -> None:
+    sink_path, source_path = args
+    source = source_path.read_bytes()
+    sink_path.write_bytes(source)
+    return f"Saved {sink_path.name}"
 
 
 def common_gdf_processing(
@@ -245,6 +227,9 @@ def upload(args) -> str:
 def landing__av():
     logging.info(f"Start {__name__}")
 
+    # https://github.com/fsspec/gcsfs/issues/379
+    mp.set_start_method("spawn")
+
     logging.info(f"Gathering existing zip files...")
     sink_raw_folder = SINK_FOLDER / "raw"
     sink_raw_folder.mkdir(parents=True, exist_ok=True)
@@ -257,7 +242,12 @@ def landing__av():
     delete_outdated_zip(existing_zip, zip_sink_source_map)
 
     logging.info(f"Download zip files...")
-    download_new_zip(existing_zip, zip_sink_source_map)
+    incoming = set(zip_sink_source_map.keys())
+    to_download = incoming.difference(existing_zip)
+    args = [(sink_path, zip_sink_source_map[sink_path]) for sink_path in to_download]
+    with Pool(processes=mp.cpu_count() - 1) as pool:
+        for i, result_msg in enumerate(pool.imap_unordered(download_zip, args), 1):
+            logging.info(f"{i}/{len(args)} {result_msg}")
 
     logging.info(f"Extract data from zip files...")
     tmp_gebaeudeflaeche = SCRATCH_FOLDER / "gebaeudeflaeche" / "chunks"
