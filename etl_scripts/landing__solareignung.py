@@ -29,13 +29,12 @@ SOURCE_STAC_ASSET_KEY = "solarenergie-eignung-daecher_2056.gdb.zip"
 SOURCE_FILE_GDB_LAYERNAME = "SOLKAT_CH_DACH"
 
 SINK_FOLDER = PandaPath(
-    "gs://folimar-geotest-store001/landing/test_ch.bfe.solarenergie-eignung"
+    "gs://folimar-geotest-store001/landing/ch.bfe.solarenergie-eignung"
 )
 # SINK_FOLDER = PandaPath(
 #     "/workspaces/pretty_panda/data/landing/ch.bfe.solarenergie-eignung"
 # )
 SINK_FILE_SOLARDAECHER = SINK_FOLDER / "solarenergie-eignung-daecher_2056.fgb"
-SINK_META_FILE = SINK_FOLDER / "processing_metadata.json"
 
 
 def get_asset_from_stac_item(
@@ -54,19 +53,16 @@ def landing__solareignung():
     asset_path, asset_asof = get_asset_from_stac_item(
         SOURCE_STAC_ITEM, SOURCE_STAC_ASSET_KEY
     )
-    if asset_asof <= get_metadata_asof(SINK_META_FILE):
-        logging.info(f"Asset is up to date. No update required.")
-        return
 
     sink_raw_file = SINK_FOLDER / "raw" / asset_path.name
-    logging.info(f"Newer asset available. Downloading raw file to {sink_raw_file}...")
-    sink_raw_file.parent.mkdir(parents=True, exist_ok=True)
-    sink_raw_file.write_bytes(asset_path.read_bytes())
+    logging.info(f"Newer asset available. Copy raw file to {sink_raw_file}...")
+    asset_path.copy_to(sink_raw_file)
 
     logging.info(
         f"Extracting layer {SOURCE_FILE_GDB_LAYERNAME} from {sink_raw_file} to {SINK_FILE_SOLARDAECHER}..."
     )
     SINK_FILE_SOLARDAECHER.parent.mkdir(parents=True, exist_ok=True)
+    SINK_FILE_SOLARDAECHER.unlink(missing_ok=True)
     command = [
         "ogr2ogr",
         "-progress",
@@ -82,9 +78,6 @@ def landing__solareignung():
         SOURCE_FILE_GDB_LAYERNAME,
     ]
     subprocess.run(command, check=True)
-
-    logging.info(f"Write metadata to {SINK_META_FILE}...")
-    set_metadata_asof_now(SINK_META_FILE)
 
     logging.info(f"All done!")
 

@@ -6,7 +6,6 @@ SOURCE_OUTDATED_DAYS specifies how many days old the data can be at most before 
 """
 
 from util import PandaPath, get_metadata_asof, set_metadata_asof_now, extract_zip_file
-from datetime import datetime, timedelta
 import pandas as pd
 import geopandas as gpd
 import logging
@@ -18,15 +17,14 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
-SOURCE_ZIP = PandaPath("https://public.madd.bfs.admin.ch/ch.zip")
+SOURCE_FILE = PandaPath("https://public.madd.bfs.admin.ch/ch.zip")
 SOURCE_OUTDATED_DAYS = 14
 
 SCRATCH_FOLDER = PandaPath("/workspaces/pretty_panda/data/scratch/ch.bfs.gwr")
 
-SINK_FOLDER = PandaPath("gs://folimar-geotest-store001/landing/ch.bfs.gwr")
-# SINK_FOLDER = PandaPath("/workspaces/pretty_panda/data/landing/ch.bfs.gwr")
-SINK_FILE = SINK_FOLDER / "buildings.fgb"
-SINK_META_FILE = SINK_FOLDER / "processing_metadata.json"
+# SINK_FOLDER = PandaPath("gs://folimar-geotest-store001/landing/ch.bfs.gwr")
+SINK_FOLDER = PandaPath("/workspaces/pretty_panda/data/landing/ch.bfs.gwr")
+SINK_FILE = SINK_FOLDER / "gwr_buildings.fgb"
 
 
 def create_buildings_file(extracted_zip_folder):
@@ -64,12 +62,16 @@ def create_buildings_file(extracted_zip_folder):
 
 def upload(scratch_file: PandaPath):
     logging.info(f"Uploading to {SINK_FILE}...")
+    SINK_FILE.parent.mkdir(parents=True, exist_ok=True)
+    SINK_FILE.unlink(missing_ok=True)
     command = [
         "ogr2ogr",
         "-progress",
         "--debug",
         "OFF",
         "-makevalid",
+        "-nln",
+        SINK_FILE.stem,
         "-nlt",
         "PROMOTE_TO_MULTI",
         SINK_FILE.as_gdal(),
@@ -81,18 +83,14 @@ def upload(scratch_file: PandaPath):
 def landing__gwr():
     logging.info(f"Start {__name__}")
 
-    if (datetime.now() - get_metadata_asof(SINK_META_FILE)) < timedelta(
-        days=SOURCE_OUTDATED_DAYS
-    ):
+    sink_raw_file = SINK_FOLDER / "raw" / SOURCE_FILE.name
+    if sink_raw_file.exists():
         logging.info(
-            f"Asset is less than {SOURCE_OUTDATED_DAYS} days old. No update required."
+            f"{sink_raw_file} already exists, skip copying from {SOURCE_FILE}..."
         )
-        return
-
-    sink_raw_file = SINK_FOLDER / "raw" / SOURCE_ZIP.name
-    logging.info(f"Newer asset available. Downloading raw file to {sink_raw_file}...")
-    sink_raw_file.parent.mkdir(parents=True, exist_ok=True)
-    sink_raw_file.write_bytes(SOURCE_ZIP.read_bytes())
+    else:
+        logging.info(f"Copy {SOURCE_FILE} to {sink_raw_file}...")
+        SOURCE_FILE.copy_to(sink_raw_file)
 
     logging.info(f"Extracting zip file to scratch {SCRATCH_FOLDER}...")
     extracted_folder = extract_zip_file(sink_raw_file, SCRATCH_FOLDER)
@@ -105,9 +103,6 @@ def landing__gwr():
 
     logging.info("Cleaning up scratch folder...")
     SCRATCH_FOLDER.clean_dir()
-
-    logging.info(f"Write metadata to {SINK_META_FILE}...")
-    set_metadata_asof_now(SINK_META_FILE)
 
     logging.info(f"All done!")
 
