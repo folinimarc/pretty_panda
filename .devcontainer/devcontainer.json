@@ -7,7 +7,8 @@
         "hediet.vscode-drawio",
         "njpwerner.autodocstring",
         "github.vscode-github-actions",
-        "pharndt.vscode-markdown-table"
+        "pharndt.vscode-markdown-table",
+        "ritwickdey.liveserver"
       ],
       "settings": {
         "[python]": {
@@ -32,7 +33,10 @@
       }
     }
   },
-  "image": "ghcr.io/laiskasiili/pretty_panda/processing_env-dev:2023-11-29-19-57-15",
+  "features": {
+    "ghcr.io/dhoeric/features/google-cloud-cli:1": {}
+  },
+  "image": "ghcr.io/folinimarc/pretty_panda/processing_env-dev:2023-12-16-11-58-10",
   "name": "DevContainer (python, poetry)",
   "postCreateCommand": "pre-commit install",
   "runArgs": [
