@@ -39,7 +39,6 @@ jobs:
         id: set_current_date
         run: echo "CURRENT_DATE=$(date +'%Y-%m-%d-%H-%M-%S')" >> $GITHUB_ENV
 
-      # TODO: Enable multi platform build, once python package numcodecs can be built on arm64 using docker buildx (tried without success for version 12.1)
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
