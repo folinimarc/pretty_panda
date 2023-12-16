@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EGID frontend demo</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""/>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN" crossorigin="anonymous">
+    <style>
+        #map {
+            height: 500px;
+        }
+        .info {
+            padding: 6px 8px;
+            font: 14px/16px Arial, Helvetica, sans-serif;
+            background: rgba(255,255,255,0.75);
+            box-shadow: 0 0 15px rgba(0,0,0,0.2);
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="row align-items-center">
+        <div class="input-group my-2 col">
+            <input type="text" id="egid-input" class="form-control" placeholder="Enter EGIG or leave emtpy for random.">
+            <button id="search-btn" type="button" class="btn btn-primary">Query</button>
+        </div>
+        <div class="col">
+            <div id="spinner" class="d-none">
+                <div class="mx-2 spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                Loading...
+            </div>
+            <span id="error" class="mx-2 text-danger"></span>
+        </div>
+    </div>
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL" crossorigin="anonymous"></script>
+    <script>
+        var map = L.map('map').setView([47.1368, 7.2468], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19
+        }).addTo(map);
+
+        var info = L.control({position: 'topright'});
+        info.onAdd = function () {
+            this._div = L.DomUtil.create('div', 'info');
+            this.update();
+            return this._div;
+        };
+        info.update = function (props) {
+            this._div.innerHTML = props ?
+                `<strong>EGID:</strong> ${props.egid}<br>
+                <strong>Total Flaeche:</strong> ${parseInt(props.total_flaeche)}<br>
+                <strong>Total Stromertrag:</strong> ${parseInt(props.total_stromertrag)}` : 'Search for an EGID.';
+        };
+        info.addTo(map);
+
+        var polygons = L.geoJSON().addTo(map);
+
+        document.getElementById('search-btn').addEventListener('click', function() {
+            var errorEl = document.getElementById('error');
+            errorEl.classList.add('d-none');
+            var spinnerEl = document.getElementById('spinner');
+            spinnerEl.classList.remove('d-none');
+            var btn = document.getElementById('egid-input');
+            var egid = btn.value;
+            btn.disabled = true;
+            fetch(`https://europe-west9-folimar-geotest.cloudfunctions.net/egid_lookup?egid=${egid}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.data.length == 0) {
+                    errorEl.textContent = "No data found!";
+                    errorEl.classList.remove('d-none');
+                    return;
+                }
+                polygons.clearLayers();
+                var egid = data.egid;
+                var total_flaeche = data.total_flaeche;
+                var total_stromertrag = data.total_stromertrag;
+                data.data.forEach(item => {
+                    var popupContent = `
+                        <strong>Flaeche:</strong> ${parseInt(item.flaeche)}<br>
+                        <strong>Stromertrag:</strong> ${parseInt(item.stromertrag)}<br>
+                    `;
+
+                    var geometry = L.geoJson(item.geometry);
+                    geometry.bindPopup(popupContent);
+                    polygons.addLayer(geometry);
+
+                    info.update({
+                        egid: egid,
+                        total_flaeche: total_flaeche,
+                        total_stromertrag: total_stromertrag
+                    });
+                });
+                map.fitBounds(polygons.getBounds());
+            })
+            .catch((error) => {
+                console.error('Error:', error);
+                errorEl.textContent = "An error occured, check console!";
+                errorEl.classList.remove('d-none');
+            })
+            .finally(() => {
+                btn.disabled = false;
+                spinnerEl.classList.add('d-none');
+            });
+        });
+    </script>
+</body>
+</html>
